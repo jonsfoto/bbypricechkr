@@ -1,0 +1,76 @@
+name: Price Check (Best Buy)
+
+on:
+  schedule:
+    - cron: "0 13,21 * * *"  # 13:00 & 21:00 UTC (≈ 8am & 4pm America/Detroit)
+  workflow_dispatch: {}       # lets you run it on-demand
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to push history changes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Timestamp (UTC)
+        run: echo "CHECKED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+
+      - name: Run price check
+        id: run_check
+        env:
+          BESTBUY_API_KEY: ${{ secrets.BESTBUY_API_KEY }}
+          BESTBUY_SKU: ${{ secrets.BESTBUY_SKU }}
+          CHECKED_AT: ${{ env.CHECKED_AT }}
+        run: |
+          python price_check.py | tee action_output.txt
+          # Determine if price changed by reading the script's stdout
+          if grep -q "PRICE_CHANGED" action_output.txt; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Save price history if changed
+        if: steps.run_check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add price_history.json
+          git commit -m "Update price history [skip ci]"
+          git push
+
+      # ---------- Choose ONE notifier below ----------
+      # Option A: Email (SMTP). Fill SMTP_* and ALERT_* secrets.
+      - name: Send email on price change
+        if: steps.run_check.outputs.changed == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "[Price Alert] ${{ secrets.BESTBUY_SKU }} changed"
+          to: ${{ secrets.ALERT_TO }}
+          from: ${{ secrets.ALERT_FROM }}
+          body: >
+            Best Buy price changed for SKU ${{ secrets.BESTBUY_SKU }}.
+            See the latest entry in price_history.json:
+            https://github.com/${{ github.repository }}/blob/main/price_history.json
+
+      # Option B: Push via Pushover (simple mobile push). Fill both secrets.
+      - name: Push via Pushover on price change
+        if: steps.run_check.outputs.changed == 'true'
+        run: |
+          curl -s \
+            --form-string "token=${{ secrets.PUSHOVER_APP_TOKEN }}" \
+            --form-string "user=${{ secrets.PUSHOVER_USER_KEY }}" \
+            --form-string "title=Best Buy price changed" \
+            --form-string "message=SKU ${{ secrets.BESTBUY_SKU }} price updated. Check repo price_history.json." \
+            https://api.pushover.net/1/messages.json
