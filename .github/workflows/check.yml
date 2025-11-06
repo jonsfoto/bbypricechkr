@@ -1,15 +1,15 @@
-name: Price Check (Best Buy)
+name: Price Check (Best Buy, multi-SKU)
 
 on:
   schedule:
-    - cron: "0 13,21 * * *"  # 13:00 & 21:00 UTC (≈ 8am & 4pm America/Detroit)
-  workflow_dispatch: {}       # lets you run it on-demand
+    - cron: "0 13,21 * * *"   # 8:00 & 16:00 America/Detroit (UTC hours)
+  workflow_dispatch: {}
 
 jobs:
   check:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # to push history changes
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,55 +22,66 @@ jobs:
       - name: Timestamp (UTC)
         run: echo "CHECKED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
 
-      - name: Run price check
+      - name: Run price check for all SKUs
         id: run_check
         env:
           BESTBUY_API_KEY: ${{ secrets.BESTBUY_API_KEY }}
-          BESTBUY_SKU: ${{ secrets.BESTBUY_SKU }}
+          BESTBUY_SKUS: ${{ secrets.BESTBUY_SKUS }}   # e.g. "6535721,6523167,6416470"
           CHECKED_AT: ${{ env.CHECKED_AT }}
         run: |
           python price_check.py | tee action_output.txt
-          # Determine if price changed by reading the script's stdout
-          if grep -q "PRICE_CHANGED" action_output.txt; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+
+          # Derive outputs
+          CHANGED_COUNT=$(grep -oE '^CHANGED_COUNT [0-9]+' action_output.txt | awk '{print $2}')
+          echo "changed_count=${CHANGED_COUNT:-0}" >> $GITHUB_OUTPUT
+
+          # Gather pretty summary lines if any changed
+          if [ "${CHANGED_COUNT:-0}" -gt 0 ]; then
+            grep '^CHANGED_LINE ' action_output.txt | sed 's/^CHANGED_LINE //' > changed_lines.txt || true
+            echo "lines<<EOF" >> $GITHUB_OUTPUT
+            cat changed_lines.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "lines=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Save price history if changed
-        if: steps.run_check.outputs.changed == 'true'
+      - name: Save price histories if any changed
+        if: steps.run_check.outputs.changed_count != '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add price_history.json
-          git commit -m "Update price history [skip ci]"
-          git push
+          git add price_history_*.json
+          git commit -m "Update price history for changed SKUs [skip ci]" || echo "No changes to commit"
+          git push || echo "No changes to push"
 
       # ---------- Choose ONE notifier below ----------
-      # Option A: Email (SMTP). Fill SMTP_* and ALERT_* secrets.
-      - name: Send email on price change
-        if: steps.run_check.outputs.changed == 'true'
+      # Option A: Email
+      - name: Send email on price changes
+        if: steps.run_check.outputs.changed_count != '0'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}
           server_port: ${{ secrets.SMTP_PORT }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASS }}
-          subject: "[Price Alert] ${{ secrets.BESTBUY_SKU }} changed"
+          subject: "[Price Alert] ${{ steps.run_check.outputs.changed_count }} item(s) changed"
           to: ${{ secrets.ALERT_TO }}
           from: ${{ secrets.ALERT_FROM }}
           body: >
-            Best Buy price changed for SKU ${{ secrets.BESTBUY_SKU }}.
-            See the latest entry in price_history.json:
-            https://github.com/${{ github.repository }}/blob/main/price_history.json
+            Best Buy price changed for the following:
+            ${{ steps.run_check.outputs.lines }}
 
-      # Option B: Push via Pushover (simple mobile push). Fill both secrets.
-      - name: Push via Pushover on price change
-        if: steps.run_check.outputs.changed == 'true'
+            See price histories:
+            https://github.com/${{ github.repository }}/tree/main
+
+      # Option B: Pushover
+      - name: Push via Pushover on price changes
+        if: steps.run_check.outputs.changed_count != '0'
         run: |
+          MSG="Best Buy price changed for ${{ steps.run_check.outputs.changed_count }} item(s):%0A${{ steps.run_check.outputs.lines }}"
           curl -s \
             --form-string "token=${{ secrets.PUSHOVER_APP_TOKEN }}" \
             --form-string "user=${{ secrets.PUSHOVER_USER_KEY }}" \
             --form-string "title=Best Buy price changed" \
-            --form-string "message=SKU ${{ secrets.BESTBUY_SKU }} price updated. Check repo price_history.json." \
+            --form-string "message=$MSG" \
             https://api.pushover.net/1/messages.json
