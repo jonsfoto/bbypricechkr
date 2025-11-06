@@ -45,12 +45,24 @@ jobs:
             echo "lines=" >> $GITHUB_OUTPUT
           fi
 
+      - name: Save CSV log (every run)
+        run: |
+          if git status --porcelain | grep -q "price_history_log.csv"; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add price_history_log.csv
+            git commit -m "Append CSV log [skip ci]"
+            git push
+          else
+            echo "CSV unchanged (no new rows)"
+          fi
+
       - name: Save price histories if any changed
         if: steps.run_check.outputs.changed_count != '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add price_history_*.json price_history_log.csv
+          git add price_history_*.json
           git commit -m "Update price history for changed SKUs [skip ci]" || echo "No changes to commit"
           git push || echo "No changes to push"
 
