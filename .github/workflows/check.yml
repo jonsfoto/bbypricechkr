@@ -50,7 +50,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add price_history_*.json
+          git add price_history_*.json price_history_log.csv
           git commit -m "Update price history for changed SKUs [skip ci]" || echo "No changes to commit"
           git push || echo "No changes to push"
 
