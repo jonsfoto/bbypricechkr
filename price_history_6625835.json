@@ -37,6 +37,12 @@
       "regularPrice": 699.99,
       "url": "https://api.bestbuy.com/click/-/6625835/pdp",
       "checkedAt": "2025-12-15T13:37:49Z"
+    },
+    {
+      "salePrice": 379.99,
+      "regularPrice": 699.99,
+      "url": "https://api.bestbuy.com/click/-/6625835/pdp",
+      "checkedAt": "2025-12-29T13:34:19Z"
     }
   ]
 }
