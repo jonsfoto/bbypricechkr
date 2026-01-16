@@ -1,6 +1,6 @@
 {
   "sku": "6625874",
-  "name": "TCL - 65\" Class QM5K Series 4K UHD HDR QD-Mini LED Smart TV with Google TV (2025)",
+  "name": "TCL - 65\" Class QM5K Series 4K UHD QD-Mini LED Smart TV with Google TV (2025)",
   "records": [
     {
       "salePrice": 549.99,
@@ -61,6 +61,12 @@
       "regularPrice": 899.99,
       "url": "https://api.bestbuy.com/click/-/6625874/pdp",
       "checkedAt": "2026-01-08T13:37:22Z"
+    },
+    {
+      "salePrice": 449.99,
+      "regularPrice": 899.99,
+      "url": "https://api.bestbuy.com/click/-/6625874/pdp",
+      "checkedAt": "2026-01-16T13:34:26Z"
     }
   ]
 }
